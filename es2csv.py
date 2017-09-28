@@ -18,7 +18,6 @@ import time
 import argparse
 import json
 import csv
-import ast
 import elasticsearch
 import progressbar
 from functools import wraps

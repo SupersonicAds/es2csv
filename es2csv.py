@@ -18,6 +18,7 @@ import time
 import argparse
 import json
 import csv
+import ast
 import elasticsearch
 import progressbar
 from functools import wraps
@@ -188,12 +189,13 @@ class Es2csv:
             bar.finish()
 
     def flush_to_file(self, hit_list):
-        def to_keyvalue_pairs(source, ancestors=[], header_delimeter='.'):
-            def is_list(arg):
-                return type(arg) is list
+        def is_list(arg):
+            return type(arg) is list
 
-            def is_dict(arg):
-                return type(arg) is dict
+        def is_dict(arg):
+            return type(arg) is dict
+
+        def to_keyvalue_pairs(source, ancestors=[], header_delimeter='.'):
 
             if is_dict(source):
                 for key in source.keys():
@@ -213,6 +215,24 @@ class Es2csv:
                 except:
                     out[header] = source
 
+        def to_json(source):
+            if is_dict(source):
+                return {k: to_json(v) for k, v in source.items()}
+
+            elif is_list(source):
+                return [to_json(v) for v in source]
+
+            else:
+                try:
+                    value = json.loads(source)
+                    if (is_dict(value) or is_list(value)):
+                        return to_json(value)
+                    else:
+                        return source
+                except:
+                    return source
+
+
         if (self.opts.format == 'csv'):
             with open(self.tmp_file, 'a') as tmp_file:
                 for hit in hit_list:
@@ -229,13 +249,10 @@ class Es2csv:
             with open(self.opts.output_file, 'a') as out_file:
                 for hit in hit_list:
                     if '_source' in hit and len(hit['_source']) > 0:
-                        single_res = hit['_source']
-                        if ('_all' in self.opts.fields) or (len(self.opts.fields) != 1):
-                            value = {k: v.encode('utf8') if isinstance(v, unicode) else v for k, v in single_res.items()}
-                        else:
-                            value = single_res.get(self.opts.fields[0])
-                            value = value.encode('utf8') if isinstance(value, unicode) else value
-                        out_file.write('%s\n' % json.dumps(value))
+                        json_result = to_json(hit['_source'])
+                        if ('_all' not in self.opts.fields) and (len(self.opts.fields) == 1):
+                            json_result = json_result.get(self.opts.fields[0])
+                        out_file.write('%s\n' % json.dumps(json_result))
             out_file.close()
 
     def write_to_csv(self):
